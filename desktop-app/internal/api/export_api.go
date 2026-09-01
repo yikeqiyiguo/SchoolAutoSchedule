@@ -109,6 +109,23 @@ func setDownloadHeader(w http.ResponseWriter, contentType, filename string) {
 const excelCT = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 var dayNameList = []string{"周一", "周二", "周三", "周四", "周五", "周六", "周日"}
+var dayFullNameList = []string{"星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"}
+
+// teacherExportRow 教师导出目录行
+type teacherExportRow struct {
+	tid      int
+	tname    string
+	subjects string
+	hours    int
+	sheet    string
+}
+
+var thinBorder = []excelize.Border{
+	{Type: "left", Color: "999999", Style: 1},
+	{Type: "right", Color: "999999", Style: 1},
+	{Type: "top", Color: "999999", Style: 1},
+	{Type: "bottom", Color: "999999", Style: 1},
+}
 
 // fillClassSheet 填充一个班级课表 sheet
 func fillClassSheet(f *excelize.File, sheet, title string, matrix map[int]map[int]*ttCell) {
@@ -162,7 +179,6 @@ func handleExportAllClasses(w http.ResponseWriter, r *http.Request) {
 	}
 	f := excelize.NewFile()
 	defer f.Close()
-	f.DeleteSheet("Sheet1")
 	// 注意：连接池为单连接，必须先关闭主查询 rows 再执行子查询，否则嵌套查询会死锁
 	type classRow struct {
 		cid         int
@@ -183,6 +199,7 @@ func handleExportAllClasses(w http.ResponseWriter, r *http.Request) {
 		m := loadMatrix(cr.cid)
 		fillClassSheet(f, sheet, fmt.Sprintf("%s %s%s 课程表", schoolName(), cr.gname, cr.cname), m)
 	}
+	f.DeleteSheet("Sheet1")
 	f.SetActiveSheet(0)
 	buf, err := f.WriteToBuffer()
 	if err != nil {
@@ -212,6 +229,7 @@ func handleExportClassExcel(w http.ResponseWriter, r *http.Request) {
 	defer f.Close()
 	m := loadMatrix(id)
 	fillClassSheet(f, "课表", fmt.Sprintf("%s %s%s 课程表", schoolName(), gname, cname), m)
+	f.DeleteSheet("Sheet1")
 	buf, err := f.WriteToBuffer()
 	if err != nil {
 		fail(w, 500, "导出失败")
@@ -228,27 +246,41 @@ func handleExportAllTeachers(w http.ResponseWriter, r *http.Request) {
 	}
 	f := excelize.NewFile()
 	defer f.Close()
-	f.DeleteSheet("Sheet1")
 	// 注意：连接池为单连接，必须先关闭主查询 rows 再执行子查询，否则嵌套查询会死锁
-	type teacherRow struct {
-		tid   int
-		tname string
-	}
-	rows, _ := store.DB.Query("SELECT id, name FROM teachers WHERE enabled=1 ORDER BY id")
-	teachers := []teacherRow{}
+	rows, _ := store.DB.Query(`SELECT t.id, t.name,
+		IFNULL((SELECT GROUP_CONCAT(s.name, '、') FROM teacher_subjects ts JOIN subjects s ON ts.subject_id=s.id WHERE ts.teacher_id=t.id), '') AS subjects,
+		(SELECT COUNT(*) FROM timetable tt WHERE tt.teacher_id=t.id) AS hours
+		FROM teachers t WHERE t.enabled=1 ORDER BY t.id`)
+	teachers := []teacherExportRow{}
 	for rows.Next() {
-		var tr teacherRow
-		if err := rows.Scan(&tr.tid, &tr.tname); err == nil {
+		var tr teacherExportRow
+		if err := rows.Scan(&tr.tid, &tr.tname, &tr.subjects, &tr.hours); err == nil {
 			teachers = append(teachers, tr)
 		}
 	}
 	rows.Close()
-	for _, tr := range teachers {
-		sheet := sanitizeSheet(tr.tname)
-		m := loadTeacherMatrix(tr.tid)
-		fillTeacherSheet(f, sheet, fmt.Sprintf("%s %s 课程表", schoolName(), tr.tname), m)
+	// sheet 名去重（重名教师自动加序号）
+	used := map[string]bool{}
+	for i := range teachers {
+		base := sanitizeSheet(teachers[i].tname)
+		name := base
+		for n := 2; used[name]; n++ {
+			name = fmt.Sprintf("%s%d", base, n)
+		}
+		used[name] = true
+		teachers[i].sheet = name
 	}
-	f.SetActiveSheet(0)
+	// 第一个 sheet：教师目录
+	fillTeacherCatalog(f, "教师目录", teachers)
+	// 后续每个教师一个 sheet
+	for _, tr := range teachers {
+		m := loadTeacherMatrix(tr.tid)
+		fillTeacherSheet(f, tr.sheet, tr.tname, tr.subjects, m, true)
+	}
+	f.DeleteSheet("Sheet1")
+	if idx, err := f.GetSheetIndex("教师目录"); err == nil {
+		f.SetActiveSheet(idx)
+	}
 	buf, err := f.WriteToBuffer()
 	if err != nil {
 		fail(w, 500, "导出失败")
@@ -259,46 +291,105 @@ func handleExportAllTeachers(w http.ResponseWriter, r *http.Request) {
 	w.Write(buf.Bytes())
 }
 
-func fillTeacherSheet(f *excelize.File, sheet, title string, matrix map[int]map[int]*ttCell) {
+// fillTeacherCatalog 教师目录 sheet：序号/教师姓名/任教学科/周课时数/点击跳转
+func fillTeacherCatalog(f *excelize.File, sheet string, teachers []teacherExportRow) {
 	f.NewSheet(sheet)
-	f.SetCellValue(sheet, "A1", title)
-	f.MergeCell(sheet, "A1", "H1")
-	head := []string{"节次", "时间"}
-	days := schoolDays()
-	for _, d := range days {
-		head = append(head, dayNameList[d-1])
-	}
+	f.SetCellValue(sheet, "A1", fmt.Sprintf("全体任课教师课表目录（共%d人）", len(teachers)))
+	f.MergeCell(sheet, "A1", "E1")
+	head := []string{"序号", "教师姓名", "任教学科", "周课时数", "点击查看"}
 	for i, h := range head {
 		cell, _ := excelize.CoordinatesToCellName(i+1, 2)
 		f.SetCellValue(sheet, cell, h)
+	}
+	for i, tr := range teachers {
+		r := i + 3
+		f.SetCellValue(sheet, fmt.Sprintf("A%d", r), i+1)
+		f.SetCellValue(sheet, fmt.Sprintf("B%d", r), tr.tname)
+		f.SetCellValue(sheet, fmt.Sprintf("C%d", r), tr.subjects)
+		f.SetCellValue(sheet, fmt.Sprintf("D%d", r), tr.hours)
+		linkCell := fmt.Sprintf("E%d", r)
+		f.SetCellValue(sheet, linkCell, "点击跳转")
+		f.SetCellHyperLink(sheet, linkCell, fmt.Sprintf("#'%s'!A1", tr.sheet), "Location")
+	}
+	styleTitle, _ := f.NewStyle(&excelize.Style{Font: &excelize.Font{Bold: true, Size: 14}, Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center"}})
+	styleHead, _ := f.NewStyle(&excelize.Style{Font: &excelize.Font{Bold: true}, Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"E8EFFF"}}, Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center"}, Border: thinBorder})
+	styleCell, _ := f.NewStyle(&excelize.Style{Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center"}, Border: thinBorder})
+	styleLink, _ := f.NewStyle(&excelize.Style{Font: &excelize.Font{Color: "0563C1", Underline: "single"}, Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center"}, Border: thinBorder})
+	f.SetCellStyle(sheet, "A1", "E1", styleTitle)
+	f.SetCellStyle(sheet, "A2", "E2", styleHead)
+	if len(teachers) > 0 {
+		last := len(teachers) + 2
+		f.SetCellStyle(sheet, "A3", fmt.Sprintf("D%d", last), styleCell)
+		f.SetCellStyle(sheet, "E3", fmt.Sprintf("E%d", last), styleLink)
+	}
+	f.SetRowHeight(sheet, 1, 26)
+	f.SetColWidth(sheet, "A", "A", 8)
+	f.SetColWidth(sheet, "B", "B", 14)
+	f.SetColWidth(sheet, "C", "C", 30)
+	f.SetColWidth(sheet, "D", "D", 12)
+	f.SetColWidth(sheet, "E", "E", 12)
+}
+
+// fillTeacherSheet 教师课表 sheet：标题「XX 老师 一周课表（任教学科：XX）」，单元格「班级\n科目」，可带返回目录链接
+func fillTeacherSheet(f *excelize.File, sheet, tname, subjects string, matrix map[int]map[int]*ttCell, backLink bool) {
+	f.NewSheet(sheet)
+	days := schoolDays()
+	nCols := 1 + len(days)
+	lastColName, _ := excelize.ColumnNumberToName(nCols)
+	title := fmt.Sprintf("%s 老师 一周课表", tname)
+	if subjects != "" {
+		title += fmt.Sprintf("（任教学科：%s）", subjects)
+	}
+	f.SetCellValue(sheet, "A1", title)
+	f.MergeCell(sheet, "A1", lastColName+"1")
+	f.SetCellValue(sheet, "A2", "节次")
+	for i, d := range days {
+		cell, _ := excelize.CoordinatesToCellName(i+2, 2)
+		f.SetCellValue(sheet, cell, dayFullNameList[d-1])
 	}
 	periods := getPeriodRows()
 	row := 3
 	for _, p := range periods {
 		idx := p["period_index"].(int)
-		st := p["start_time"].(string)
-		et := p["end_time"].(string)
-		f.SetCellValue(sheet, fmt.Sprintf("A%d", row), fmt.Sprintf("第%d节", idx))
-		f.SetCellValue(sheet, fmt.Sprintf("B%d", row), st+"\n"+et)
+		f.SetCellValue(sheet, fmt.Sprintf("A%d", row), idx)
 		for ci, d := range days {
-			col, _ := excelize.CoordinatesToCellName(ci+3, row)
+			col, _ := excelize.CoordinatesToCellName(ci+2, row)
 			if cell := matrix[d][idx]; cell != nil {
-				f.SetCellValue(sheet, col, cell.SubjectName+"\n"+cell.ClassName)
+				f.SetCellValue(sheet, col, cell.ClassName+"\n"+cell.SubjectName)
+			} else {
+				f.SetCellValue(sheet, col, "")
 			}
 		}
 		row++
 	}
-	styleHeader, _ := f.NewStyle(&excelize.Style{Font: &excelize.Font{Bold: true, Color: "FFFFFF"}, Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"7C3AED"}}, Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center"}})
-	lastCol, _ := excelize.CoordinatesToCellName(len(head), 2)
-	f.SetCellStyle(sheet, "A2", lastCol, styleHeader)
-	f.SetRowHeight(sheet, 1, 24)
-	f.SetRowHeight(sheet, 2, 20)
-	for i := 0; i < row-2; i++ {
-		f.SetRowHeight(sheet, 3+i, 34)
+	lastDataRow := row - 1
+	if backLink {
+		row++ // 空一行
+		backCell := fmt.Sprintf("A%d", row)
+		backEnd := fmt.Sprintf("%s%d", lastColName, row)
+		f.SetCellValue(sheet, backCell, "← 返回教师目录")
+		f.MergeCell(sheet, backCell, backEnd)
+		f.SetCellHyperLink(sheet, backCell, "#'教师目录'!A1", "Location")
+		styleLink, _ := f.NewStyle(&excelize.Style{Font: &excelize.Font{Color: "0563C1", Underline: "single"}, Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center"}})
+		f.SetCellStyle(sheet, backCell, backEnd, styleLink)
 	}
-	f.SetColWidth(sheet, "A", "A", 10)
-	f.SetColWidth(sheet, "B", "B", 14)
-	f.SetColWidth(sheet, "C", "H", 18)
+	styleTitle, _ := f.NewStyle(&excelize.Style{Font: &excelize.Font{Bold: true, Size: 14}, Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center"}})
+	styleHead, _ := f.NewStyle(&excelize.Style{Font: &excelize.Font{Bold: true}, Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"E8EFFF"}}, Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center"}, Border: thinBorder})
+	styleCell, _ := f.NewStyle(&excelize.Style{Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center", WrapText: true}, Border: thinBorder})
+	f.SetCellStyle(sheet, "A1", lastColName+"1", styleTitle)
+	f.SetCellStyle(sheet, "A2", fmt.Sprintf("%s2", lastColName), styleHead)
+	if lastDataRow >= 3 {
+		f.SetCellStyle(sheet, "A3", fmt.Sprintf("%s%d", lastColName, lastDataRow), styleCell)
+	}
+	f.SetRowHeight(sheet, 1, 26)
+	f.SetRowHeight(sheet, 2, 20)
+	for i := 3; i <= lastDataRow; i++ {
+		f.SetRowHeight(sheet, i, 32)
+	}
+	f.SetColWidth(sheet, "A", "A", 8)
+	if nCols >= 2 {
+		f.SetColWidth(sheet, "B", lastColName, 18)
+	}
 }
 
 func handleExportTeacherExcel(w http.ResponseWriter, r *http.Request) {
@@ -324,8 +415,11 @@ func handleExportTeacherExcel(w http.ResponseWriter, r *http.Request) {
 	}
 	f := excelize.NewFile()
 	defer f.Close()
+	subjects := ""
+	store.DB.QueryRow(`SELECT IFNULL(GROUP_CONCAT(s.name, '、'), '') FROM teacher_subjects ts JOIN subjects s ON ts.subject_id=s.id WHERE ts.teacher_id=?`, id).Scan(&subjects)
 	m := loadTeacherMatrix(id)
-	fillTeacherSheet(f, "课表", fmt.Sprintf("%s %s 课程表", schoolName(), tname), m)
+	fillTeacherSheet(f, "课表", tname, subjects, m, false)
+	f.DeleteSheet("Sheet1")
 	buf, err := f.WriteToBuffer()
 	if err != nil {
 		fail(w, 500, "导出失败")

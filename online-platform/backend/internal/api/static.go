@@ -69,5 +69,8 @@ func serveBytes(w http.ResponseWriter, path string, content []byte) {
 		ct = "application/json; charset=utf-8"
 	}
 	w.Header().Set("Content-Type", ct)
+	// 禁止浏览器缓存，避免更新后仍显示旧版前端
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	w.Header().Set("Pragma", "no-cache")
 	w.Write(content)
 }

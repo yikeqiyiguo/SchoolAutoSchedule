@@ -4,6 +4,7 @@ go 1.26
 
 require (
 	github.com/getlantern/systray v1.2.2
+	github.com/mattn/go-sqlite3 v1.14.50
 	github.com/phpdave11/gofpdf v1.4.3
 	github.com/xuri/excelize/v2 v2.11.0
 	golang.org/x/crypto v0.53.0

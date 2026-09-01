@@ -40,7 +40,7 @@ func Init() error {
 	}
 	DBPath = filepath.Join(DataDir, "scheduler.db")
 	Host = getEnv("SAS_HOST", "127.0.0.1")
-	Port = getEnv("SAS_PORT", "8000")
+	Port = getEnv("SAS_PORT", "8899")
 	return nil
 }
 
