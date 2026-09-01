@@ -1,0 +1,21 @@
+# Go 构建产物
+desktop-app/build/
+online-platform/backend/build/
+*.exe
+
+# Node
+online-platform/frontend/node_modules/
+online-platform/frontend/dist/
+
+# 运行时数据（数据库/备份/日志）
+desktop-app/data/
+desktop-app/backups/
+desktop-app/logs/
+data/
+data-*/
+*.db
+
+# 其它
+*.log
+Thumbs.db
+.DS_Store
