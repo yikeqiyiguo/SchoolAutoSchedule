@@ -40,7 +40,7 @@ func CheckPassword(hash, pwd string) bool {
 
 // GetUserByUsername 按用户名查询用户
 func GetUserByUsername(username string) (*User, error) {
-	row := store.DB.QueryRow(
+	row := store.SysDB.QueryRow(
 		"SELECT id, username, real_name, role, COALESCE(teacher_id,0), enabled, created_at FROM users WHERE username=?",
 		username)
 	return scanUser(row)
@@ -48,7 +48,7 @@ func GetUserByUsername(username string) (*User, error) {
 
 // GetUserByID 按 ID 查询
 func GetUserByID(id int) (*User, error) {
-	row := store.DB.QueryRow(
+	row := store.SysDB.QueryRow(
 		"SELECT id, username, real_name, role, COALESCE(teacher_id,0), enabled, created_at FROM users WHERE id=?",
 		id)
 	return scanUser(row)
@@ -69,7 +69,7 @@ func scanUser(row *sql.Row) (*User, error) {
 // Authenticate 验证用户名密码
 func Authenticate(username, password string) (*User, error) {
 	var hash string
-	err := store.DB.QueryRow("SELECT password_hash FROM users WHERE username=? AND enabled=1", username).Scan(&hash)
+	err := store.SysDB.QueryRow("SELECT password_hash FROM users WHERE username=? AND enabled=1", username).Scan(&hash)
 	if err != nil {
 		return nil, errors.New("用户名或密码错误")
 	}
@@ -83,7 +83,7 @@ func Authenticate(username, password string) (*User, error) {
 func CreateSession(userID int) (string, error) {
 	token := newToken()
 	expires := time.Now().AddDate(0, 0, 7).Format("2006-01-02 15:04:05")
-	_, err := store.DB.Exec(
+	_, err := store.SysDB.Exec(
 		"INSERT INTO sessions (token, user_id, expires_at) VALUES (?,?,?)",
 		token, userID, expires)
 	if err != nil {
@@ -99,13 +99,13 @@ func UserByToken(token string) (*User, error) {
 	}
 	var userID int
 	var expires string
-	err := store.DB.QueryRow(
+	err := store.SysDB.QueryRow(
 		"SELECT user_id, expires_at FROM sessions WHERE token=?", token).Scan(&userID, &expires)
 	if err != nil {
 		return nil, err
 	}
 	if t, err := time.Parse("2006-01-02 15:04:05", expires); err == nil && t.Before(time.Now()) {
-		store.DB.Exec("DELETE FROM sessions WHERE token=?", token)
+		store.SysDB.Exec("DELETE FROM sessions WHERE token=?", token)
 		return nil, sql.ErrNoRows
 	}
 	u, err := GetUserByID(userID)
@@ -117,7 +117,7 @@ func UserByToken(token string) (*User, error) {
 
 // DestroySession 删除会话
 func DestroySession(token string) {
-	store.DB.Exec("DELETE FROM sessions WHERE token=?", token)
+	store.SysDB.Exec("DELETE FROM sessions WHERE token=?", token)
 }
 
 func newToken() string {
@@ -127,34 +127,25 @@ func newToken() string {
 }
 
 // RoleName 角色显示名
+// 系统权限已统一：所有登录用户均拥有完整功能权限，对外统一显示为系统管理员
 func RoleName(role string) string {
-	switch role {
-	case "super":
-		return "超级管理员"
-	case "operator":
-		return "教务操作员"
-	case "teacher":
-		return "教师"
-	case "guest":
-		return "只读访客"
-	}
-	return role
+	return "系统管理员"
 }
 
-// CanManageUsers 是否可管理账号（仅超级管理员）
-func CanManageUsers(role string) bool { return role == "super" }
+// CanManageUsers 是否可管理账号（统一权限：登录即可）
+func CanManageUsers(role string) bool { return true }
 
 // CanView 是否可查看课表
-func CanView(role string) bool { return role == "super" || role == "operator" || role == "guest" }
+func CanView(role string) bool { return true }
 
 // CanEdit 是否可编辑基础数据
-func CanEdit(role string) bool { return role == "super" || role == "operator" }
+func CanEdit(role string) bool { return true }
 
 // CanSchedule 是否可执行排课
-func CanSchedule(role string) bool { return role == "super" || role == "operator" }
+func CanSchedule(role string) bool { return true }
 
 // CanExport 是否可导出
-func CanExport(role string) bool { return role == "super" || role == "operator" }
+func CanExport(role string) bool { return true }
 
 // CanManageBackup 是否可备份恢复
-func CanManageBackup(role string) bool { return role == "super" || role == "operator" }
+func CanManageBackup(role string) bool { return true }

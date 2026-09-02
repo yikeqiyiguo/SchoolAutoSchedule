@@ -38,13 +38,13 @@ func handleLogs(w http.ResponseWriter, r *http.Request) {
 		args = append(args, kw, kw)
 	}
 	var total int
-	store.DB.QueryRow("SELECT COUNT(*) FROM logs WHERE 1=1"+where, args...).Scan(&total)
+	store.SysDB.QueryRow("SELECT COUNT(*) FROM logs WHERE 1=1"+where, args...).Scan(&total)
 	pages := (total + perPage - 1) / perPage
 	if pages < 1 {
 		pages = 1
 	}
 	offset := (page - 1) * perPage
-	rows, err := store.DB.Query(
+	rows, err := store.SysDB.Query(
 		"SELECT id, username, action, detail, created_at FROM logs WHERE 1=1"+where+
 			" ORDER BY id DESC LIMIT ? OFFSET ?",
 		append(args, perPage, offset)...)

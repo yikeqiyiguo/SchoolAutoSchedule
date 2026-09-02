@@ -11,7 +11,9 @@ var (
 	DataDir   string // 数据库目录
 	BackupDir string // 备份目录
 	LogDir    string // 日志目录
-	DBPath    string // 数据库文件
+	DBPath    string // 旧版单库文件（仅用于多学校升级迁移）
+	SysDBPath string // 系统库（账号/会话/日志/学校列表）
+	SchoolsDir string // 各学校独立数据库目录
 	Host      string
 	Port      string
 )
@@ -39,6 +41,11 @@ func Init() error {
 		}
 	}
 	DBPath = filepath.Join(DataDir, "scheduler.db")
+	SysDBPath = filepath.Join(DataDir, "system.db")
+	SchoolsDir = filepath.Join(DataDir, "schools")
+	if err := os.MkdirAll(SchoolsDir, 0o755); err != nil {
+		return err
+	}
 	Host = getEnv("SAS_HOST", "127.0.0.1")
 	Port = getEnv("SAS_PORT", "8899")
 	return nil

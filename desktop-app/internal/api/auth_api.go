@@ -94,7 +94,7 @@ func handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var hash string
-	if err := store.DB.QueryRow("SELECT password_hash FROM users WHERE id=?", u.ID).Scan(&hash); err != nil {
+	if err := store.SysDB.QueryRow("SELECT password_hash FROM users WHERE id=?", u.ID).Scan(&hash); err != nil {
 		fail(w, 500, "查询用户失败")
 		return
 	}
@@ -107,7 +107,7 @@ func handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, "加密失败")
 		return
 	}
-	store.DB.Exec("UPDATE users SET password_hash=? WHERE id=?", nh, u.ID)
+	store.SysDB.Exec("UPDATE users SET password_hash=? WHERE id=?", nh, u.ID)
 	AddLog(u, "update", "修改个人密码")
 	okMsg(w, "密码修改成功", nil)
 }
@@ -120,7 +120,7 @@ func handleUsers(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method {
 	case "GET":
-		rows, err := store.DB.Query(
+		rows, err := store.SysDB.Query(
 			"SELECT id, username, real_name, role, COALESCE(teacher_id,0), enabled, created_at FROM users ORDER BY id")
 		if err != nil {
 			fail(w, 500, "查询失败")
@@ -148,9 +148,8 @@ func handleUsers(w http.ResponseWriter, r *http.Request) {
 			fail(w, 400, "请填写用户名")
 			return
 		}
-		if body.Role == "" {
-			body.Role = "guest"
-		}
+		// 权限已统一：所有账号拥有完整功能，角色标识固定为 super
+		body.Role = "super"
 		if body.Password == "" {
 			body.Password = "123456"
 		}
@@ -163,7 +162,7 @@ func handleUsers(w http.ResponseWriter, r *http.Request) {
 		if body.TeacherID != nil && *body.TeacherID > 0 {
 			tid = *body.TeacherID
 		}
-		res, err := store.DB.Exec(
+		res, err := store.SysDB.Exec(
 			"INSERT INTO users (username, password_hash, real_name, role, teacher_id) VALUES (?,?,?,?,?)",
 			body.Username, hash, body.RealName, body.Role, tid)
 		if err != nil {
@@ -191,7 +190,7 @@ func handleUserUpdate(w http.ResponseWriter, r *http.Request) {
 			fail(w, 400, "不能删除当前登录账号")
 			return
 		}
-		store.DB.Exec("DELETE FROM users WHERE id=?", id)
+		store.SysDB.Exec("DELETE FROM users WHERE id=?", id)
 		AddLog(me, "delete", "删除账号 #"+itoa(id))
 		okMsg(w, "删除成功", nil)
 		return
@@ -212,13 +211,14 @@ func handleUserUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if body.Enabled != nil {
-		if _, err := store.DB.Exec("UPDATE users SET enabled=? WHERE id=?", btoi(*body.Enabled), id); err != nil {
+		if _, err := store.SysDB.Exec("UPDATE users SET enabled=? WHERE id=?", btoi(*body.Enabled), id); err != nil {
 			fail(w, 500, "更新失败")
 			return
 		}
 	}
-	if body.RealName != "" || body.Role != "" {
-		store.DB.Exec("UPDATE users SET real_name=?, role=? WHERE id=?", body.RealName, body.Role, id)
+	if body.RealName != "" {
+		// 权限已统一：编辑姓名时角色固定为 super，避免遗留角色标识产生差异
+		store.SysDB.Exec("UPDATE users SET real_name=?, role='super' WHERE id=?", body.RealName, id)
 	}
 	if body.Password != "" {
 		if len(body.Password) < 6 {
@@ -226,14 +226,14 @@ func handleUserUpdate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		hash, _ := auth.HashPassword(body.Password)
-		store.DB.Exec("UPDATE users SET password_hash=? WHERE id=?", hash, id)
+		store.SysDB.Exec("UPDATE users SET password_hash=? WHERE id=?", hash, id)
 	}
 	if body.TeacherID != nil {
 		var tid interface{}
 		if *body.TeacherID > 0 {
 			tid = *body.TeacherID
 		}
-		store.DB.Exec("UPDATE users SET teacher_id=? WHERE id=?", tid, id)
+		store.SysDB.Exec("UPDATE users SET teacher_id=? WHERE id=?", tid, id)
 	}
 	AddLog(me, "update", "修改账号 #"+itoa(id))
 	okMsg(w, "保存成功", nil)
@@ -260,7 +260,7 @@ func handleResetPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	hash, _ := auth.HashPassword(body.Password)
-	store.DB.Exec("UPDATE users SET password_hash=? WHERE id=?", hash, id)
+	store.SysDB.Exec("UPDATE users SET password_hash=? WHERE id=?", hash, id)
 	AddLog(CurrentUser(r), "reset", "重置账号 #"+itoa(id)+" 密码")
 	okMsg(w, "密码已重置", nil)
 }

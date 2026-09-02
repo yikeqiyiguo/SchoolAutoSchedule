@@ -92,6 +92,13 @@ textarea { resize: vertical; min-height: 70px; }
 }
 .topbar .page-title { font-size: 17px; font-weight: 700; }
 .topbar-right { display: flex; align-items: center; gap: 14px; }
+/* 学校切换器（多学校独立课表） */
+.school-switch {
+  height: 34px; padding: 0 10px; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--primary-light); color: var(--primary); font-size: 13px; font-weight: 600;
+  cursor: pointer; outline: none; max-width: 240px;
+}
+.school-switch:hover { border-color: var(--primary); }
 .user-chip { display: flex; align-items: center; gap: 8px; }
 .avatar {
   width: 32px; height: 32px; border-radius: 50%; background: var(--primary-light);

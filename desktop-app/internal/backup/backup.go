@@ -105,17 +105,18 @@ func Restore(id int) (string, error) {
 	stmt := "VACUUM INTO '" + backupCur + "'"
 	store.DB.Exec(stmt)
 
-	// 3. 关闭连接并覆盖
+	// 3. 关闭连接并覆盖（恢复的是当前学校库）
+	curFile := store.CurrentDBFile()
 	store.DB.Close()
-	if err := copyFile(src, config.DBPath); err != nil {
-		store.Open()
+	if err := copyFile(src, curFile); err != nil {
+		store.ReopenCurrentSchool()
 		return "", fmt.Errorf("恢复失败: %w", err)
 	}
 	// 清理 WAL 残留
-	os.Remove(config.DBPath + "-wal")
-	os.Remove(config.DBPath + "-shm")
+	os.Remove(curFile + "-wal")
+	os.Remove(curFile + "-shm")
 	os.Remove(backupCur)
-	if err := store.Open(); err != nil {
+	if err := store.ReopenCurrentSchool(); err != nil {
 		return "", fmt.Errorf("恢复后重连失败: %w", err)
 	}
 	return prevName, nil

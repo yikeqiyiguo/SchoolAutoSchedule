@@ -155,7 +155,7 @@ func AddLog(u *auth.User, action, detail string) {
 		username = u.Username
 		userID = u.ID
 	}
-	store.DB.Exec("INSERT INTO logs (user_id, username, action, detail) VALUES (?,?,?,?)",
+	store.SysDB.Exec("INSERT INTO logs (user_id, username, action, detail) VALUES (?,?,?,?)",
 		userID, username, action, detail)
 }
 

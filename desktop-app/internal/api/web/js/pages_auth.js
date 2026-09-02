@@ -79,8 +79,8 @@ window.Pages.DashboardPage = {
   },
   computed: {
     canSchedule() {
-      const u = window.AppState.user;
-      return u && (u.role === "super" || u.role === "operator");
+      // 权限已统一：登录用户即可使用排课
+      return !!window.AppState.user;
     },
   },
   mounted() {

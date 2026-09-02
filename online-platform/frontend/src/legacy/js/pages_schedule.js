@@ -335,8 +335,8 @@ window.Pages.ClassTimetablePage = {
   mounted() { this.init(); },
   methods: {
     async init() {
-      const u = window.AppState.user;
-      this.canEdit = u && (u.role === "super" || u.role === "operator");
+      // 权限已统一：登录用户即可微调课表
+      this.canEdit = true;
       const [g, c, p] = await Promise.all([
         api.get("/api/base/grades"), api.get("/api/base/classes"), api.get("/api/config/periods"),
       ]);
@@ -453,7 +453,7 @@ window.Pages.TeacherTimetablePage = {
         <button class="btn btn-sm" @click="download('/api/export/teacher/' + teacherId + '/pdf')">⬇ PDF</button>
       </div>
       <div class="flex" v-else>
-        <span class="tag tag-blue">{{ teacherInfo.name }}</span>
+        <span class="tag tag-blue">{{ teacherInfo?.name }}</span>
         <button class="btn btn-sm" @click="download('/api/export/teacher/' + teacherId + '/excel')">⬇ Excel</button>
         <button class="btn btn-sm" @click="download('/api/export/teacher/' + teacherId + '/pdf')">⬇ PDF</button>
       </div>
@@ -493,17 +493,12 @@ window.Pages.TeacherTimetablePage = {
   mounted() { this.init(); },
   methods: {
     async init() {
-      const u = window.AppState.user;
-      this.canPick = u && (u.role === "super" || u.role === "operator");
+      // 权限已统一：登录用户可查看/导出任意教师课表
+      this.canPick = true;
       const p = await api.get("/api/config/periods");
       this.periods = p.data;
-      if (u && u.role === "teacher" && u.teacher_id) {
-        this.teacherId = u.teacher_id;
-        this.load();
-      } else {
-        const t = await api.get("/api/base/teachers");
-        this.teachers = t.data.filter((x) => x.enabled);
-      }
+      const t = await api.get("/api/base/teachers");
+      this.teachers = t.data.filter((x) => x.enabled);
     },
     async load() {
       if (!this.teacherId) return;
@@ -620,11 +615,11 @@ window.Pages.StatsPage = {
         </div>
       </div>
       <div class="table-wrap">
-        <table class="tbl">
-          <thead v-if="tab==='teacher'">
+        <table class="tbl" v-if="tab==='teacher'">
+          <thead>
             <tr><th>教师</th><th>任教科目</th><th>应排课时</th><th>已排课时</th><th>剩余课时</th><th>课时使用率</th><th>上限</th></tr>
           </thead>
-          <tbody v-if="tab==='teacher'">
+          <tbody>
             <tr v-for="r in teacherRows" :key="r.teacher_id">
               <td style="font-weight:600">{{ r.teacher_name }}</td><td>{{ r.subjects }}</td>
               <td>{{ r.need }}</td><td class="text-success">{{ r.have }}</td><td>{{ r.remain }}</td>
@@ -632,10 +627,12 @@ window.Pages.StatsPage = {
               <td>{{ r.limit }}</td>
             </tr>
           </tbody>
-          <thead v-else>
+        </table>
+        <table class="tbl" v-else>
+          <thead>
             <tr><th>班级</th><th>年级</th><th>应排课时</th><th>已排课时</th><th>剩余课时</th><th>完成度</th></tr>
           </thead>
-          <tbody v-else>
+          <tbody>
             <tr v-for="r in classRows" :key="r.class_id">
               <td style="font-weight:600">{{ r.class_name }}</td><td>{{ r.grade_name }}</td>
               <td>{{ r.need }}</td><td class="text-success">{{ r.have }}</td><td>{{ r.remain }}</td>

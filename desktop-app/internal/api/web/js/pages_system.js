@@ -1,4 +1,4 @@
-/* ============ 操作日志 / 备份恢复 / 账号权限 ============ */
+/* ============ 操作日志 / 备份恢复 / 账号权限 / 学校管理 ============ */
 
 window.Pages = window.Pages || {};
 
@@ -102,16 +102,15 @@ window.Pages.BackupPage = {
 window.Pages.UsersPage = {
   template: `
   <div class="card">
-    <div class="card-head"><h3>账号与权限管理 <span class="sub">超级管理员/教务操作员/教师/只读访客</span></h3>
+    <div class="card-head"><h3>用户管理 <span class="sub">所有登录账号均拥有完整功能权限</span></h3>
       <button class="btn btn-primary btn-sm" @click="openEdit()">+ 新增账号</button>
     </div>
     <div class="table-wrap">
       <table class="tbl">
-        <thead><tr><th>用户名</th><th>姓名</th><th style="width:120px">角色</th><th style="width:90px">状态</th><th style="width:170px">创建时间</th><th style="width:240px">操作</th></tr></thead>
+        <thead><tr><th>用户名</th><th>姓名</th><th style="width:90px">状态</th><th style="width:170px">创建时间</th><th style="width:240px">操作</th></tr></thead>
         <tbody>
           <tr v-for="u in users" :key="u.id">
             <td style="font-weight:600">{{ u.username }}</td><td>{{ u.real_name }}</td>
-            <td><span class="tag" :class="roleCls(u.role)">{{ u.role_name }}</span></td>
             <td><span class="tag" :class="u.enabled ? 'tag-green' : 'tag-gray'">{{ u.enabled ? '启用' : '禁用' }}</span></td>
             <td class="muted">{{ u.created_at }}</td>
             <td class="ops">
@@ -132,16 +131,8 @@ window.Pages.UsersPage = {
           <div class="form-grid">
             <div class="form-item"><label>用户名 <span class="req">*</span></label><input v-model="editForm.username" :disabled="!!editForm.id"></div>
             <div class="form-item"><label>姓名</label><input v-model="editForm.real_name"></div>
-            <div class="form-item"><label>角色</label>
-              <select v-model="editForm.role">
-                <option value="super">超级管理员</option><option value="operator">教务操作员</option>
-                <option value="teacher">教师</option><option value="guest">只读访客</option>
-              </select></div>
             <div class="form-item"><label>{{ editForm.id ? '重置密码（留空不修改）' : '密码（默认123456）' }}</label><input type="password" v-model="editForm.password"></div>
           </div>
-          <div class="form-item mt-8" v-if="editForm.role==='teacher'"><label>绑定教师</label>
-            <select v-model="editForm.teacher_id"><option :value="null">— 不绑定 —</option>
-              <option v-for="t in teachers" :key="t.id" :value="t.id">{{ t.name }}</option></select></div>
         </div>
         <div class="modal-foot">
           <button class="btn" @click="showEdit=false">取消</button>
@@ -150,23 +141,20 @@ window.Pages.UsersPage = {
       </div>
     </div>
   </div>`,
-  data() { return { users: [], teachers: [], showEdit: false, editForm: {} }; },
-  mounted() { this.load(); this.loadTeachers(); },
+  data() { return { users: [], showEdit: false, editForm: {} }; },
+  mounted() { this.load(); },
   methods: {
     async load() { const r = await api.get("/api/auth/users"); this.users = r.data; },
-    async loadTeachers() { const r = await api.get("/api/base/teachers"); this.teachers = r.data.filter((t) => t.enabled); },
-    roleCls(role) {
-      return { super: "tag-purple", operator: "tag-blue", teacher: "tag-green", guest: "tag-gray" }[role] || "tag-gray";
-    },
     openEdit(u) {
-      this.editForm = u ? { ...u, teacher_id: u.teacher_id || null } : { username: "", real_name: "", role: "guest", password: "", teacher_id: null };
+      this.editForm = u ? { id: u.id, username: u.username, real_name: u.real_name || "" } : { username: "", real_name: "", password: "" };
       this.showEdit = true;
     },
     async save() {
       if (!this.editForm.username) return toast("请填写用户名", "warning");
       try {
-        if (this.editForm.id) await api.put(`/api/auth/users/${this.editForm.id}`, this.editForm);
-        else await api.post("/api/auth/users", this.editForm);
+        const payload = { real_name: this.editForm.real_name || "", password: this.editForm.password || "" };
+        if (this.editForm.id) await api.put(`/api/auth/users/${this.editForm.id}`, payload);
+        else await api.post("/api/auth/users", { username: this.editForm.username, ...payload });
         this.showEdit = false; toast("保存成功"); this.load();
       } catch (e) {}
     },
@@ -183,6 +171,92 @@ window.Pages.UsersPage = {
       const ok = await confirmDialog(`确定删除账号「${u.username}」吗？`);
       if (!ok) return;
       try { await api.del(`/api/auth/users/${u.id}`); toast("删除成功"); this.load(); } catch (e) {}
+    },
+  },
+};
+
+/* ---------------- 学校管理（多学校独立课表） ---------------- */
+window.Pages.SchoolsPage = {
+  template: `
+  <div>
+    <div class="card">
+      <div class="card-head">
+        <h3>学校管理 <span class="sub">每所学校拥有独立的年级、班级、教师、任课关系与课表，互不影响</span></h3>
+        <button class="btn btn-primary btn-sm" @click="openEdit()">+ 新建学校</button>
+      </div>
+      <div class="section-tip">在顶部栏可快速切换学校；切换后所有基础数据与课表均为该校独立数据，无需删除重建。</div>
+      <div class="table-wrap">
+        <table class="tbl">
+          <thead><tr><th>学校名称</th><th style="width:110px">状态</th><th style="width:170px">创建时间</th><th style="width:260px">操作</th></tr></thead>
+          <tbody>
+            <tr v-for="s in schools" :key="s.id">
+              <td style="font-weight:600">🏫 {{ s.name }}</td>
+              <td><span class="tag" :class="s.current ? 'tag-green' : 'tag-gray'">{{ s.current ? '当前使用' : '未使用' }}</span></td>
+              <td class="muted">{{ s.created_at }}</td>
+              <td class="ops">
+                <button class="btn btn-sm btn-primary" v-if="!s.current" @click="switchTo(s)">🔄 切换到此校</button>
+                <button class="btn btn-sm" @click="openEdit(s)">改名</button>
+                <button class="btn btn-sm btn-danger" v-if="!s.current" @click="remove(s)">删除</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="modal-mask" v-if="showEdit">
+      <div class="modal" style="max-width:420px">
+        <div class="modal-head"><h4>{{ editForm.id ? '修改学校名称' : '新建学校' }}</h4></div>
+        <div class="modal-body">
+          <div class="form-item"><label>学校名称 <span class="req">*</span></label>
+            <input v-model="editForm.name" placeholder="例如：实验中学" @keyup.enter="save"></div>
+          <div class="section-tip" v-if="!editForm.id">新建后将自动切换到新学校，并初始化默认科目、课时时段与排课规则。</div>
+        </div>
+        <div class="modal-foot">
+          <button class="btn" @click="showEdit=false">取消</button>
+          <button class="btn btn-primary" @click="save">保存</button>
+        </div>
+      </div>
+    </div>
+  </div>`,
+  data() { return { schools: [], showEdit: false, editForm: {} }; },
+  mounted() { this.load(); },
+  methods: {
+    async load() {
+      const r = await api.get("/api/schools");
+      this.schools = r.data.list || [];
+    },
+    openEdit(s) {
+      this.editForm = s ? { id: s.id, name: s.name } : { name: "" };
+      this.showEdit = true;
+    },
+    async save() {
+      if (!this.editForm.name) return toast("请填写学校名称", "warning");
+      try {
+        if (this.editForm.id) {
+          const r = await api.put(`/api/schools/${this.editForm.id}`, { name: this.editForm.name });
+          toast(r.message); this.showEdit = false; this.load();
+          if (window.AppState.user) setTimeout(() => location.reload(), 400);
+        } else {
+          const r = await api.post("/api/schools", { name: this.editForm.name });
+          toast(r.message || "学校已创建");
+          setTimeout(() => location.reload(), 600);
+        }
+      } catch (e) {}
+    },
+    async switchTo(s) {
+      const ok = await confirmDialog(`切换到「${s.name}」吗？切换后当前页面数据将刷新为此学校的数据。`);
+      if (!ok) return;
+      try {
+        const r = await api.post(`/api/schools/${s.id}/switch`);
+        toast(r.message);
+        setTimeout(() => location.reload(), 400);
+      } catch (e) {}
+    },
+    async remove(s) {
+      const ok = await confirmDialog(`确定删除学校「${s.name}」吗？该校全部数据（年级/班级/教师/课表）将被永久删除，不可恢复！`);
+      if (!ok) return;
+      try { await api.del(`/api/schools/${s.id}`); toast("已删除"); this.load(); } catch (e) {}
     },
   },
 };

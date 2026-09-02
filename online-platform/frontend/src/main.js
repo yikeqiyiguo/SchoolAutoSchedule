@@ -21,26 +21,27 @@ await import("./legacy/js/pages_system.js");
 
 /* 导航菜单定义（按角色过滤） */
 const MENUS = [
-  { key: "dashboard", title: "仪表盘", icon: "🏠", hash: "#/dashboard", roles: ["super", "operator", "teacher", "guest"] },
-  { group: "基础数据", roles: ["super", "operator"] },
-  { key: "settings", title: "系统配置", icon: "⚙️", hash: "#/settings", roles: ["super", "operator"] },
-  { key: "grades", title: "年级管理", icon: "🏫", hash: "#/grades", roles: ["super", "operator"] },
-  { key: "classes", title: "班级管理", icon: "🧑‍🎓", hash: "#/classes", roles: ["super", "operator"] },
-  { key: "subjects", title: "科目管理", icon: "📚", hash: "#/subjects", roles: ["super", "operator"] },
-  { key: "teachers", title: "教师管理", icon: "👩‍🏫", hash: "#/teachers", roles: ["super", "operator"] },
-  { key: "assignments", title: "任课关系", icon: "🔗", hash: "#/assignments", roles: ["super", "operator"] },
-  { group: "排课中心", roles: ["super", "operator"] },
-  { key: "rules", title: "排课规则", icon: "📐", hash: "#/rules", roles: ["super", "operator"] },
-  { key: "schedule", title: "一键排课", icon: "🚀", hash: "#/schedule", roles: ["super", "operator"] },
-  { key: "class-timetable", title: "班级课表", icon: "🗓️", hash: "#/class-timetable", roles: ["super", "operator", "guest"] },
-  { key: "teacher-timetable", title: "教师课表", icon: "👩‍🏫", hash: "#/teacher-timetable", roles: ["super", "operator", "teacher"] },
-  { key: "conflicts", title: "冲突检测", icon: "🚨", hash: "#/conflicts", roles: ["super", "operator"] },
-  { key: "stats", title: "课时统计", icon: "📊", hash: "#/stats", roles: ["super", "operator", "teacher"] },
-  { group: "数据与系统", roles: ["super", "operator"] },
-  { key: "export", title: "导出中心", icon: "📥", hash: "#/export", roles: ["super", "operator"] },
-  { key: "logs", title: "操作日志", icon: "📜", hash: "#/logs", roles: ["super", "operator"] },
-  { key: "backup", title: "备份恢复", icon: "💾", hash: "#/backup", roles: ["super", "operator"] },
-  { key: "users", title: "权限管理", icon: "🔐", hash: "#/users", roles: ["super"] },
+  { key: "dashboard", title: "仪表盘", icon: "🏠", hash: "#/dashboard" },
+  { group: "基础数据" },
+  { key: "settings", title: "系统配置", icon: "⚙️", hash: "#/settings" },
+  { key: "grades", title: "年级管理", icon: "🏫", hash: "#/grades" },
+  { key: "classes", title: "班级管理", icon: "🧑‍🎓", hash: "#/classes" },
+  { key: "subjects", title: "科目管理", icon: "📚", hash: "#/subjects" },
+  { key: "teachers", title: "教师管理", icon: "👩‍🏫", hash: "#/teachers" },
+  { key: "assignments", title: "任课关系", icon: "🔗", hash: "#/assignments" },
+  { group: "排课中心" },
+  { key: "rules", title: "排课规则", icon: "📐", hash: "#/rules" },
+  { key: "schedule", title: "一键排课", icon: "🚀", hash: "#/schedule" },
+  { key: "class-timetable", title: "班级课表", icon: "🗓️", hash: "#/class-timetable" },
+  { key: "teacher-timetable", title: "教师课表", icon: "👩‍🏫", hash: "#/teacher-timetable" },
+  { key: "conflicts", title: "冲突检测", icon: "🚨", hash: "#/conflicts" },
+  { key: "stats", title: "课时统计", icon: "📊", hash: "#/stats" },
+  { group: "数据与系统" },
+  { key: "schools", title: "学校管理", icon: "🏫", hash: "#/schools" },
+  { key: "export", title: "导出中心", icon: "📥", hash: "#/export" },
+  { key: "logs", title: "操作日志", icon: "📜", hash: "#/logs" },
+  { key: "backup", title: "备份恢复", icon: "💾", hash: "#/backup" },
+  { key: "users", title: "用户管理", icon: "🔐", hash: "#/users" },
 ];
 
 const PAGE_TITLES = {
@@ -48,7 +49,7 @@ const PAGE_TITLES = {
   subjects: "科目管理", teachers: "教师管理", assignments: "任课关系", rules: "排课规则",
   schedule: "一键排课", "class-timetable": "班级课表", "teacher-timetable": "教师课表",
   conflicts: "冲突检测", stats: "课时统计", export: "导出中心", logs: "操作日志",
-  backup: "备份恢复", users: "权限管理",
+  backup: "备份恢复", users: "用户管理", schools: "学校管理",
 };
 
 const PAGE_COMPONENTS = {
@@ -57,24 +58,45 @@ const PAGE_COMPONENTS = {
   assignments: "AssignmentsPage", rules: "RulesPage", schedule: "SchedulePage",
   "class-timetable": "ClassTimetablePage", "teacher-timetable": "TeacherTimetablePage",
   conflicts: "ConflictsPage", stats: "StatsPage", export: "ExportPage",
-  logs: "LogsPage", backup: "BackupPage", users: "UsersPage", login: "LoginPage",
+  logs: "LogsPage", backup: "BackupPage", users: "UsersPage", schools: "SchoolsPage", login: "LoginPage",
 };
 
 const Root = {
   data() {
-    return { page: "dashboard", sidebarOpen: false, showPwdModal: false, pwdForm: { old_password: "", new_password: "" } };
+    return {
+      page: "dashboard", sidebarOpen: false, showPwdModal: false,
+      pwdForm: { old_password: "", new_password: "" },
+      schools: [], schoolId: "",
+    };
   },
   computed: {
     user() { return window.AppState.user; },
     menus() {
-      const role = this.user?.role || "guest";
-      return MENUS.filter((m) => m.roles.includes(role));
+      // 权限已统一：所有登录用户可见全部菜单
+      return MENUS;
     },
     pageTitle() { return PAGE_TITLES[this.page] || ""; },
     pageComponent() { return PAGE_COMPONENTS[this.page] || "DashboardPage"; },
   },
   methods: {
     nav(hash) { location.hash = hash; this.sidebarOpen = false; },
+    async loadSchools() {
+      try {
+        const r = await api.get("/api/schools");
+        this.schools = r.data.list || [];
+        this.schoolId = r.data.current ? r.data.current.id : "";
+      } catch (e) {}
+    },
+    async switchSchool() {
+      if (!this.schoolId) return;
+      try {
+        const r = await api.post(`/api/schools/${this.schoolId}/switch`);
+        toast(r.message || "已切换学校");
+        setTimeout(() => location.reload(), 400);
+      } catch (e) {
+        this.loadSchools();
+      }
+    },
     logout() {
       api.post("/api/auth/logout").catch(() => {});
       window.AppState.user = null;
@@ -115,7 +137,12 @@ const Root = {
         </aside>
         <div class="main">
           <header class="topbar">
-            <div class="page-title">{{ pageTitle }}</div>
+            <div style="display:flex;align-items:center;gap:14px">
+              <div class="page-title">{{ pageTitle }}</div>
+              <select class="school-switch" v-if="schools.length" v-model="schoolId" @change="switchSchool" title="切换学校（各学校数据相互独立）">
+                <option v-for="s in schools" :key="s.id" :value="s.id">🏫 {{ s.name }}{{ s.current ? ' ·当前' : '' }}</option>
+              </select>
+            </div>
             <div class="topbar-right">
               <div class="user-chip">
                 <div class="avatar">{{ (user?.real_name || user?.username || '?').charAt(0) }}</div>
@@ -176,9 +203,14 @@ async function doRoute() {
       return;
     }
   }
+  // 无论从登录页进入还是会话恢复，都确保学校列表已加载（顶栏切换器依赖）
+  if (!vm.schools.length) {
+    vm.loadSchools();
+  }
   const menu = MENUS.find((m) => m.key === page);
-  if (!menu || !menu.roles.includes(window.AppState.user.role)) {
-    page = window.AppState.user.role === "guest" ? "class-timetable" : "dashboard";
+  if (!menu) {
+    // 权限已统一：登录用户可访问任意功能页，仅校验页面是否存在
+    page = "dashboard";
   }
   vm.page = page;
 }

@@ -79,6 +79,13 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/export/teacher/{id}/pdf", handleExportTeacherPDF)
 	s.mux.HandleFunc("GET /api/export/stats/excel", handleExportStats)
 
+	// 学校管理（多学校独立课表）
+	s.mux.HandleFunc("GET /api/schools", handleSchools)
+	s.mux.HandleFunc("POST /api/schools", handleSchools)
+	s.mux.HandleFunc("PUT /api/schools/{id}", handleSchoolUpdate)
+	s.mux.HandleFunc("DELETE /api/schools/{id}", handleSchoolUpdate)
+	s.mux.HandleFunc("POST /api/schools/{id}/switch", handleSchoolSwitch)
+
 	// 备份
 	s.mux.HandleFunc("GET /api/backup", handleBackupList)
 	s.mux.HandleFunc("POST /api/backup/create", handleBackupCreate)

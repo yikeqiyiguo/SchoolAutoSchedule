@@ -85,59 +85,43 @@ var ActionNames = map[string]string{
 	"backup": "备份", "restore": "恢复", "reset": "重置",
 }
 
-func seedIfEmpty() error {
+func seedIfEmpty(db *sql.DB) error {
 	// 系统配置
 	var n int
-	if err := DB.QueryRow("SELECT COUNT(*) FROM system_config").Scan(&n); err != nil {
+	if err := db.QueryRow("SELECT COUNT(*) FROM system_config").Scan(&n); err != nil {
 		return err
 	}
 	if n == 0 {
-		if _, err := DB.Exec("INSERT INTO system_config (id, school_name, school_days) VALUES (1, '', '1,2,3,4,5')"); err != nil {
+		if _, err := db.Exec("INSERT INTO system_config (id, school_name, school_days) VALUES (1, '', '1,2,3,4,5')"); err != nil {
 			return err
 		}
 	}
-	// 默认用户
-	if err := DB.QueryRow("SELECT COUNT(*) FROM users").Scan(&n); err != nil {
-		return err
-	}
-	if n == 0 {
-		for _, u := range defaultUsers {
-			hash, err := bcrypt.GenerateFromPassword([]byte(u.Password), bcrypt.DefaultCost)
-			if err != nil {
-				return err
-			}
-			if _, err := DB.Exec("INSERT INTO users (username, password_hash, real_name, role) VALUES (?,?,?,?)",
-				u.Username, string(hash), u.RealName, u.Role); err != nil {
-				return err
-			}
-		}
-	}
 	// 默认科目
-	if err := DB.QueryRow("SELECT COUNT(*) FROM subjects").Scan(&n); err != nil {
+	if err := db.QueryRow("SELECT COUNT(*) FROM subjects").Scan(&n); err != nil {
 		return err
 	}
 	if n == 0 {
 		for i, s := range DefaultSubjects {
-			if _, err := DB.Exec("INSERT INTO subjects (name, subject_type, sort_order, is_default) VALUES (?,?,?,1)",
+			if _, err := db.Exec("INSERT INTO subjects (name, subject_type, sort_order, is_default) VALUES (?,?,?,1)",
 				s.Name, s.Type, i+1); err != nil {
 				return err
 			}
 		}
 	}
 	// 默认时段
-	if err := DB.QueryRow("SELECT COUNT(*) FROM periods").Scan(&n); err != nil {
+	if err := db.QueryRow("SELECT COUNT(*) FROM periods").Scan(&n); err != nil {
 		return err
 	}
 	if n == 0 {
 		for i, p := range DefaultPeriods {
-			if _, err := DB.Exec("INSERT INTO periods (period_index, start_time, end_time, period_type) VALUES (?,?,?,?)",
+			if _, err := db.Exec("INSERT INTO periods (period_index, start_time, end_time, period_type) VALUES (?,?,?,?)",
 				i+1, p[0], p[1], p[2]); err != nil {
 				return err
 			}
 		}
 	}
 	// 默认规则
-	if err := DB.QueryRow("SELECT COUNT(*) FROM rules").Scan(&n); err != nil {
+	if err := db.QueryRow("SELECT COUNT(*) FROM rules").Scan(&n); err != nil {
 		return err
 	}
 	if n == 0 {
@@ -146,10 +130,37 @@ func seedIfEmpty() error {
 			if err != nil {
 				return err
 			}
-			if _, err := DB.Exec("INSERT INTO rules (name, rule_type, priority, is_default, params, description) VALUES (?,?,?,1,?,?)",
+			if _, err := db.Exec("INSERT INTO rules (name, rule_type, priority, is_default, params, description) VALUES (?,?,?,1,?,?)",
 				r.Name, r.Type, r.Priority, string(params), r.Desc); err != nil {
 				return err
 			}
+		}
+	}
+	return nil
+}
+
+// schoolSeedIfEmpty 学校库种子（科目/时段/规则/系统配置）
+func schoolSeedIfEmpty(db *sql.DB) error {
+	return seedIfEmpty(db)
+}
+
+// sysSeedIfEmpty 系统库种子（默认管理员账号）
+func sysSeedIfEmpty(db *sql.DB) error {
+	var n int
+	if err := db.QueryRow("SELECT COUNT(*) FROM users").Scan(&n); err != nil {
+		return err
+	}
+	if n > 0 {
+		return nil
+	}
+	for _, u := range defaultUsers {
+		hash, err := bcrypt.GenerateFromPassword([]byte(u.Password), bcrypt.DefaultCost)
+		if err != nil {
+			return err
+		}
+		if _, err := db.Exec("INSERT INTO users (username, password_hash, real_name, role) VALUES (?,?,?,?)",
+			u.Username, string(hash), u.RealName, u.Role); err != nil {
+			return err
 		}
 	}
 	return nil
