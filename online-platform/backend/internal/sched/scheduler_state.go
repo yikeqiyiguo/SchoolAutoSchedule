@@ -8,6 +8,15 @@ import (
 
 // newState 初始化运行状态
 func newState(periods []periodRow) *state {
+	pt := map[int]string{}
+	lastRegular := 0
+	for _, p := range periods {
+		pt[p.Index] = p.PeriodType
+		// "末节"取每天最后一个常规节次（非晚自习）；晚自习由 evening_limit 规则约束
+		if p.PeriodType != "evening" {
+			lastRegular = p.Index
+		}
+	}
 	return &state{
 		classGrid:         map[int]map[int]map[int]*Place{},
 		teacherGrid:       map[int]map[int]map[int][]*Place{},
@@ -16,6 +25,8 @@ func newState(periods []periodRow) *state {
 		teacherMorningCnt: map[int]int{},
 		classSubjectDay:   map[int]map[int]map[int]int{},
 		subjectSubjectDay: map[int]map[int]map[int]int{},
+		periodType:        pt,
+		lastPeriod:        lastRegular,
 	}
 }
 

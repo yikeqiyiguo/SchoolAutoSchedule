@@ -77,6 +77,23 @@ type state struct {
 	teacherMorningCnt map[int]int
 	classSubjectDay   map[int]map[int]map[int]int // class->subject->day 计数
 	subjectSubjectDay map[int]map[int]map[int]int // class->subject->day 集合
+	periodType        map[int]string               // period_index -> period_type
+	lastSchoolDay     int                          // 每周最后一个上课日（用于"每周末节"判定）
+	lastPeriod        int                          // 每天最后一个常规节次（非晚自习，用于"每周末节"判定）
+}
+
+// ptOf 取某节次的区域类型（历史遗留缺失时按 morning 处理）
+func (st *state) ptOf(p int) string {
+	if t, ok := st.periodType[p]; ok && t != "" {
+		return t
+	}
+	return "morning"
+}
+
+// isLastPeriodOfWeek 是否为每周最后一节课（最后上课日的最后一个常规节次）
+func (st *state) isLastPeriodOfWeek(s Slot) bool {
+	return st.lastSchoolDay > 0 && st.lastPeriod > 0 &&
+		s.Day == st.lastSchoolDay && s.Period == st.lastPeriod
 }
 
 // Run 执行排课。keepManual 为 true 时保留手动课。
@@ -120,6 +137,13 @@ func Run(keepManual bool) (*Result, error) {
 
 	// 3. 初始化状态（含手动课占位）
 	st := newState(periods)
+	maxDay := 0
+	for _, d := range schoolDays {
+		if d > maxDay {
+			maxDay = d
+		}
+	}
+	st.lastSchoolDay = maxDay
 	if keepManual {
 		st.loadManual()
 	}
@@ -188,6 +212,9 @@ func lessonPriority(l *Lesson) int {
 	}
 	if l.TeacherLimit < 20 {
 		p += 1
+	}
+	if l.IsClassTeacher {
+		p += 2
 	}
 	return p
 }
@@ -295,6 +322,28 @@ func (st *state) scoreSlot(l *Lesson, s Slot, rules []*SoftRule) int {
 	if st.teacherDayCount[l.TeacherID][s.Day] < 3 {
 		score += 1
 	}
+	// 均匀分散到周一至周五 + 避免连堂课：
+	// 同一科目当天已有时，优先把后面的课时安排到其它天（每天至多一节）。
+	// 只有当科目周课时多于上课天数、当天第二节不可避免时，才优先放在
+	// 不同时段区域（如上午一节、下午一节），避免"连堂"及"隔一节再上"。
+	if ps := st.subjectDayPeriods(l.ClassID, l.SubjectID, s.Day); len(ps) > 0 {
+		sameArea := false
+		for _, p := range ps {
+			if st.ptOf(p) == st.ptOf(s.Period) {
+				sameArea = true
+				break
+			}
+		}
+		if sameArea {
+			score -= 60 // 同区域再加一节：连堂/隔开形态，强烈避免
+		} else {
+			score -= 25 // 跨区域（如上午+下午）：分散形态，可接受但尽量少
+		}
+	}
+	// 每周最后一节课优先安排班主任任课的课时
+	if l.IsClassTeacher && st.isLastPeriodOfWeek(s) {
+		score += 30
+	}
 	return score
 }
 
@@ -376,11 +425,26 @@ func (st *state) remove(l *Lesson) {
 		for p, pl := range day {
 			if pl.Lesson == l {
 				delete(day, p)
-				if st.classSubjectDay[l.ClassID][l.SubjectID] != nil {
-					st.classSubjectDay[l.ClassID][l.SubjectID][d]--
+				// 科目同天计数：只有当该天该科目节数归零时才移除"天"，
+				// 否则保留（同天多节连排时移除一节不能丢整天的计数）
+				if st.classSubjectDay[l.ClassID] != nil {
+					if m := st.classSubjectDay[l.ClassID][l.SubjectID]; m != nil {
+						m[d]--
+						if m[d] <= 0 {
+							delete(m, d)
+						}
+					}
 				}
-				if st.subjectSubjectDay[l.ClassID][l.SubjectID] != nil {
-					delete(st.subjectSubjectDay[l.ClassID][l.SubjectID], d)
+				if st.subjectSubjectDay[l.ClassID] != nil {
+					if m := st.subjectSubjectDay[l.ClassID][l.SubjectID]; m != nil {
+						left := 0
+						if cm := st.classSubjectDay[l.ClassID][l.SubjectID]; cm != nil {
+							left = cm[d]
+						}
+						if left <= 0 {
+							delete(m, d)
+						}
+					}
 				}
 				break
 			}
@@ -440,6 +504,18 @@ func (st *state) conflictLessons() []*Lesson {
 	for l := range set {
 		out = append(out, l)
 	}
+	return out
+}
+
+// subjectDayPeriods 返回某班某天某科目已放置的节次列表（升序）
+func (st *state) subjectDayPeriods(cid, sid, d int) []int {
+	out := []int{}
+	for p, pl := range st.classGrid[cid][d] {
+		if pl.Lesson.SubjectID == sid {
+			out = append(out, p)
+		}
+	}
+	sort.Ints(out)
 	return out
 }
 
